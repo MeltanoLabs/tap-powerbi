@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import sys
+import time
 from typing import TYPE_CHECKING
 
-from singer_sdk.authenticators import OAuthAuthenticator, SingletonMeta
+import requests
+from singer_sdk.authenticators import (
+    APIAuthenticatorBase,
+    OAuthAuthenticator,
+    SingletonMeta,
+)
 
 if sys.version_info >= (3, 12):
     from typing import override
@@ -17,19 +23,128 @@ if TYPE_CHECKING:
 
 POWERBI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 
+PROXY_URL_KEYS = (
+    "oauth_credentials.refresh_proxy_url",
+    "refresh_proxy_url",
+)
+PROXY_AUTH_KEYS = (
+    "oauth_credentials.refresh_proxy_url_auth",
+    "refresh_proxy_url_auth",
+)
+REFRESH_TOKEN_KEYS = (
+    "refresh_token",
+    "oauth_credentials.refresh_token",
+)
+
+# Refresh slightly before the proxy-reported expiry so an in-flight request
+# does not race the token's actual expiration.
+_EXPIRY_SKEW_SECONDS = 60
+
+
+def _first_present(config: dict, keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = config.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+class ProxyRefreshAuthenticator(APIAuthenticatorBase, metaclass=SingletonMeta):
+    """Bearer-token authenticator that mints access tokens via the Matatika OAuth proxy.
+
+    The catalog UI's "Connect with Microsoft" button uses Matatika's Azure AD
+    app to mint a refresh token via PKCE. Microsoft binds refresh tokens to
+    the minting client, so the tap cannot exchange the refresh token directly
+    — the proxy holds Matatika's client_secret and performs the exchange
+    server-side. The tap POSTs ``{"refresh_token": ...}`` and receives a
+    fresh ``{"access_token", "expires_in"}``.
+    """
+
+    def __init__(
+        self,
+        *,
+        proxy_url: str,
+        refresh_token: str,
+        proxy_auth_header: str | None = None,
+    ) -> None:
+        """Initialise the authenticator with proxy URL and refresh token."""
+        super().__init__()
+        self._proxy_url = proxy_url
+        self._refresh_token = refresh_token
+        self._proxy_auth_header = proxy_auth_header
+        self._access_token: str | None = None
+        self._expires_at: float = 0.0
+
+    @property
+    def _is_token_valid(self) -> bool:
+        return (
+            self._access_token is not None
+            and time.time() < self._expires_at - _EXPIRY_SKEW_SECONDS
+        )
+
+    def _refresh_access_token(self) -> None:
+        headers = {"Content-Type": "application/json"}
+        if self._proxy_auth_header:
+            headers["Authorization"] = self._proxy_auth_header
+        response = requests.post(
+            self._proxy_url,
+            json={"refresh_token": self._refresh_token},
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        self._access_token = payload["access_token"]
+        # Default to 1h if proxy omits expires_in (matches Microsoft's default).
+        expires_in = int(payload.get("expires_in", 3600))
+        self._expires_at = time.time() + expires_in
+
+    @override
+    def authenticate_request(
+        self,
+        request: requests.PreparedRequest,
+    ) -> requests.PreparedRequest:
+        if not self._is_token_valid:
+            self._refresh_access_token()
+        self.auth_headers["Authorization"] = f"Bearer {self._access_token}"
+        return super().authenticate_request(request)
+
 
 class PowerBIAuthenticator(OAuthAuthenticator, metaclass=SingletonMeta):
-    """Authenticator for Power BI supporting both service-principal and refresh-token flows."""
+    """Authenticator for Power BI supporting service-principal and direct refresh-token flows."""
 
     @classmethod
-    def create_for_stream(cls, stream: Stream) -> PowerBIAuthenticator:
-        """Build an authenticator from a stream's tap config.
+    def create_for_stream(cls, stream: Stream) -> APIAuthenticatorBase:
+        """Build the right authenticator from a stream's tap config.
 
-        The Power BI token endpoint is tenant-scoped; ``common`` is used when
-        no tenant is configured (valid for the delegated-user refresh-token
-        flow).
+        Three modes, in priority order:
+
+        1. **Proxy refresh** — ``oauth_credentials.refresh_proxy_url`` is set.
+           Used by the Matatika catalog "Connect with Microsoft" button. The
+           proxy holds Matatika's ``client_secret``; the tap only needs the
+           refresh token.
+        2. **Direct delegated user** — ``refresh_token`` is set and the
+           operator provides their own ``client_id``/``client_secret``.
+        3. **Service principal** — ``client_credentials`` flow, tenant-scoped.
         """
-        tenant_id = stream.config.get("tenant_id") or "common"
+        config = dict(stream.config)
+
+        proxy_url = _first_present(config, PROXY_URL_KEYS)
+        if proxy_url:
+            refresh_token = _first_present(config, REFRESH_TOKEN_KEYS)
+            if not refresh_token:
+                msg = (
+                    "oauth_credentials.refresh_proxy_url is set but no "
+                    "refresh_token was provided."
+                )
+                raise ValueError(msg)
+            return ProxyRefreshAuthenticator(
+                proxy_url=proxy_url,
+                refresh_token=refresh_token,
+                proxy_auth_header=_first_present(config, PROXY_AUTH_KEYS),
+            )
+
+        tenant_id = config.get("tenant_id") or "common"
         auth_endpoint = (
             f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
         )
