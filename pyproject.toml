@@ -45,11 +45,11 @@ tap-powerbi = 'tap_powerbi.tap:TapPowerBI.cli'
 [dependency-groups]
 dev = [
     { include-group = "test" },
-    "requests-mock>=1.12.1",
 ]
 test = [
     "pytest>=9",
     "pytest-github-actions-annotate-failures>=0.4",
+    "requests-mock>=1.12.1",
     "singer-sdk[testing]",
 ]
 typing = [
@@ -71,6 +71,11 @@ warn_redundant_casts = true
 warn_unreachable = true
 warn_unused_configs = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# requests-mock ships no py.typed marker / stubs; ignore the missing import.
+module = ["requests_mock.*"]
+ignore_missing_imports = true
 
 [tool.ty.rules]
 unused-type-ignore-comment = "ignore"
