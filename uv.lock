@@ -1699,6 +1699,7 @@ dev = [
 test = [
     { name = "pytest" },
     { name = "pytest-github-actions-annotate-failures" },
+    { name = "requests-mock" },
     { name = "singer-sdk", extra = ["testing"] },
 ]
 typing = [
@@ -1725,6 +1726,7 @@ dev = [
 test = [
     { name = "pytest", specifier = ">=9" },
     { name = "pytest-github-actions-annotate-failures", specifier = ">=0.4" },
+    { name = "requests-mock", specifier = ">=1.12.1" },
     { name = "singer-sdk", extras = ["testing"] },
 ]
 typing = [

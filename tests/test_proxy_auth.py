@@ -32,8 +32,9 @@ def proxy_config() -> dict:
 def _reset_proxy_singleton() -> None:
     """Clear the SingletonMeta cache so each test gets a fresh authenticator."""
     # SingletonMeta stores the cached instance under the name-mangled attribute
-    # ``_SingletonMeta__single_instance`` on the class object.
-    ProxyRefreshAuthenticator._SingletonMeta__single_instance = None  # type: ignore[attr-defined]  # noqa: SLF001
+    # ``_SingletonMeta__single_instance`` on the class object.  Use setattr so
+    # that static type checkers (ty, mypy) don't flag the dynamic attribute.
+    setattr(ProxyRefreshAuthenticator, "_SingletonMeta__single_instance", None)  # noqa: B010
 
 
 @pytest.fixture(autouse=True)
