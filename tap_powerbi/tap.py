@@ -41,11 +41,14 @@ class TapPowerBI(Tap):
         ),
         th.Property(
             "client_secret",
-            th.StringType(nullable=False),
-            required=True,
+            th.StringType,
             secret=True,
             title="Client Secret",
-            description="Azure AD application client secret.",
+            description=(
+                "Azure AD application client secret. Required for "
+                "service-principal and direct delegated-user auth; omit when "
+                "using the Matatika OAuth proxy (the proxy holds the secret)."
+            ),
         ),
         th.Property(
             "refresh_token",
@@ -55,6 +58,27 @@ class TapPowerBI(Tap):
             description=(
                 "OAuth refresh token. Provide instead of tenant_id to use the "
                 "delegated-user auth flow."
+            ),
+        ),
+        th.Property(
+            "oauth_credentials.refresh_proxy_url",
+            th.StringType,
+            title="OAuth Refresh Proxy URL",
+            description=(
+                "Matatika OAuth proxy URL used to refresh access tokens. "
+                "When set, the tap POSTs the refresh token to this URL and "
+                "the proxy returns a fresh access token. Used by the catalog "
+                '"Connect with Microsoft" button.'
+            ),
+        ),
+        th.Property(
+            "oauth_credentials.refresh_proxy_url_auth",
+            th.StringType,
+            secret=True,
+            title="OAuth Refresh Proxy Authorization",
+            description=(
+                "Authorization header value sent on the proxy refresh "
+                "request (e.g. ``Bearer <token>``). Optional."
             ),
         ),
         th.Property(
