@@ -45,9 +45,11 @@ class PowerBIStream(RESTStream):
         """Whether the tap is configured to use ``/admin/*`` routes."""
         return bool(self.config.get("admin_mode"))
 
-    @override
+    # NB: SDK's ``RESTStream.path`` is a class attribute (``str``), not a
+    # property — so ``@override`` would be wrong here.
     @property
     def path(self) -> str:  # type: ignore[override]
+        """Resolve to ``admin_path`` when ``admin_mode`` is on; else ``user_path``."""
         if self.admin_mode and self.admin_path:
             return self.admin_path
         return self.user_path

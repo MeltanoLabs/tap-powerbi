@@ -36,7 +36,7 @@ TestTapPowerBI = get_tap_test_class(
 # Schema-key parity per stream class. Updates here mirror the Power BI
 # REST API docs (https://learn.microsoft.com/en-us/rest/api/power-bi/);
 # bump these sets when a stream's schema is changed intentionally.
-EXPECTED_SCHEMA_KEYS: dict[type, set[str]] = {
+EXPECTED_SCHEMA_KEYS: dict[type[streams.PowerBIStream], set[str]] = {
     streams.GroupsStream: {
         "id", "name", "isReadOnly", "isOnDedicatedCapacity", "capacityId",
         "dataflowStorageId", "defaultDatasetStorageFormat",
@@ -115,15 +115,18 @@ EXPECTED_SCHEMA_KEYS: dict[type, set[str]] = {
     list(EXPECTED_SCHEMA_KEYS),
     ids=lambda cls: cls.__name__,
 )
-def test_schema_keys_match_docs(stream_cls: type) -> None:
+def test_schema_keys_match_docs(stream_cls: type[streams.PowerBIStream]) -> None:
     """Schema property keys match the Power BI REST API docs.
 
     If this test fails, either a field was removed/renamed by accident or
     the Power BI API added a field we should ingest. Update
     ``EXPECTED_SCHEMA_KEYS`` after cross-checking learn.microsoft.com.
     """
-    actual = set(stream_cls.schema["properties"])
-    assert actual == EXPECTED_SCHEMA_KEYS[stream_cls]
+    # ``schema`` is set as a class attribute (dict) by each subclass; the
+    # SDK's parent ``Stream.schema`` is a property, so we read via getattr
+    # to bypass static analysis that follows the parent's type.
+    schema: dict = getattr(stream_cls, "schema")  # noqa: B009
+    assert set(schema["properties"]) == EXPECTED_SCHEMA_KEYS[stream_cls]
 
 
 def test_all_streams_have_parity_test() -> None:
@@ -147,6 +150,7 @@ def test_powerbi_paginator() -> None:
     ).encode()
     paginator.advance(response)
     assert not paginator.finished
+    assert paginator.current_value is not None
     assert paginator.current_value.geturl() == "https://api.powerbi.com/next"
 
     response._content = json.dumps({"value": []}).encode()  # noqa: SLF001

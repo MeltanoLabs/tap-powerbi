@@ -51,6 +51,10 @@ class GroupsStream(PowerBIStream):
         next_page_token: Any | None,
     ) -> dict[str, Any]:
         params = super().get_url_params(context, next_page_token)
+        # SDK types `get_url_params` as `dict | str`; we only ever return a
+        # dict from this stream, so normalise before mutating.
+        if not isinstance(params, dict):
+            params = {}
         if self.admin_mode:
             # /admin/groups requires $top (max 5000).
             params.setdefault("$top", 5000)
