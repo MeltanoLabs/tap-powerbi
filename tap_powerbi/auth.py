@@ -113,6 +113,24 @@ class ProxyRefreshAuthenticator(APIAuthenticatorBase, metaclass=SingletonMeta):
 class PowerBIAuthenticator(OAuthAuthenticator, metaclass=SingletonMeta):
     """Authenticator for Power BI supporting service-principal and direct refresh-token flows."""
 
+    def __init__(
+        self,
+        *,
+        tap_config: dict,
+        auth_endpoint: str,
+        oauth_scopes: str,
+    ) -> None:
+        super().__init__(
+            auth_endpoint=auth_endpoint,
+            oauth_scopes=oauth_scopes,
+            client_id=tap_config.get("client_id"),
+            client_secret=tap_config.get("client_secret"),
+        )
+        # OAuthAuthenticator leaves _config={} when stream is not passed;
+        # restore the full tap config so oauth_request_body can read
+        # refresh_token and other settings.
+        self._config = dict(tap_config)
+
     @classmethod
     def create_for_stream(cls, stream: Stream) -> APIAuthenticatorBase:
         """Build the right authenticator from a stream's tap config.
@@ -149,7 +167,7 @@ class PowerBIAuthenticator(OAuthAuthenticator, metaclass=SingletonMeta):
             f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
         )
         return cls(
-            stream=stream,
+            tap_config=config,
             auth_endpoint=auth_endpoint,
             oauth_scopes=POWERBI_SCOPE,
         )
@@ -162,7 +180,7 @@ class PowerBIAuthenticator(OAuthAuthenticator, metaclass=SingletonMeta):
         Branches on whether ``refresh_token`` is configured: delegated-user
         refresh flow vs. service-principal client_credentials flow.
         """
-        config = self.config
+        config = self._config
         if config.get("refresh_token"):
             return {
                 "grant_type": "refresh_token",
