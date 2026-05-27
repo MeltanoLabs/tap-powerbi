@@ -1711,7 +1711,7 @@ typing = [
 requires-dist = [
     { name = "requests", specifier = "~=2.34.0" },
     { name = "s3fs", marker = "extra == 's3'", specifier = ">=2026.1.0" },
-    { name = "singer-sdk", extras = ["faker"], specifier = "~=0.54.1" },
+    { name = "singer-sdk", extras = ["faker"], specifier = "~=0.54.2" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'", specifier = ">=4.5.0" },
 ]
 provides-extras = ["s3"]
